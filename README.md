@@ -2,7 +2,7 @@
 
 ## About The Project
 
-A starter project that shows how to use the MindFusion.Diagramming for JavaScript library with NPM and Vite.
+A template project showing how to configure MindFusion's [JavaScript Diagram library](https://mindfusion.dev/javascript-diagram.html) with NPM and Vite.
 
 ### Installation
 
