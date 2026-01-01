@@ -1,4 +1,4 @@
-# MindFusion.Diagramming for JavaScript - NPM Starter Project
+# Collaborative Mind Map with MindFusion.Diagramming for JavaScript
 
 ## About The Project
 
