@@ -6,7 +6,8 @@
 	ShapeNode,
 	PathFinder,
 	Overview,
-	Ruler
+	Ruler,
+	Shape
 } from "@mindfusion/diagramming";
 
 import { Font, Rect } from "@mindfusion/drawing";
@@ -93,6 +94,7 @@ document.addEventListener("DOMContentLoaded", function () {
 		const node = diagram.factory.createShapeNode(model.x, model.y, model.width, model.height);
 		node.id = model.id;
 		node.text = model.text;
+		node.shape = Shape.fromId(model.shape);
 		applyingRemoteChange = false;
 	});
 
@@ -100,7 +102,8 @@ document.addEventListener("DOMContentLoaded", function () {
 		applyingRemoteChange = true;
 		const node = findNode(model.id);
 		if (node) {
-			node.bounds = new Rect(model.x, model.y, model.width, model.height);
+			var newBounds = new Rect(model.x, model.y, model.width, model.height);
+			node.setBounds(newBounds, true); // the true argument also updates link end points
 		}
 		applyingRemoteChange = false;
 	});
@@ -192,6 +195,7 @@ function onNodeCreated(sender, args) {
 	const model = {
 		id: node.id,
 		text: node.text,
+		shape: node.shape.id,
 		x: r.x,
 		y: r.y,
 		width: r.width,

@@ -26,11 +26,14 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
-import { Diagram } from '@mindfusion/diagramming';
+import { Diagram, Shape } from '@mindfusion/diagramming';
 import { Rect } from '@mindfusion/drawing';
 
 // Server-side diagram instance
 const serverDiagram = new Diagram();
+
+// shape created when users draw directly on the canvas (instead of drag and drop from palette)
+serverDiagram.defaultShape = Shape.fromId("Ellipse");
 
 // Create a default diagram
 const node1 = serverDiagram.factory.createShapeNode(10, 10, 30, 30);
@@ -64,15 +67,18 @@ io.on('connection', (socket) => {
     });
 
     socket.on('nodeCreated', (data) => {
-        const node = serverDiagram.factory.createShapeNode(data.x, data.y, data.width, data.height);
+        const node = serverDiagram.factory.createShapeNode(
+			data.x, data.y, data.width, data.height);
         node.id = data.id;
         node.text = data.text;
+		node.shape = Shape.fromId(data.shape);
         socket.broadcast.emit('nodeCreated', data);
     });
     socket.on('nodeModified', (data) => {
 		const node = findNode(data.id);
 		if (node) {
-			node.bounds = new Rect(data.x, data.y, data.width, data.height);
+			var newBounds = new Rect(data.x, data.y, data.width, data.height);
+			node.setBounds(newBounds, true); // the true argument also updates link end points
 		}
         socket.broadcast.emit('nodeModified', data);
     });
