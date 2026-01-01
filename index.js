@@ -9,24 +9,28 @@
 	Ruler
 } from "@mindfusion/diagramming";
 
-import { Font } from "@mindfusion/drawing";
-
-import { Rect } from "@mindfusion/drawing";
+import { Font, Rect } from "@mindfusion/drawing";
 
 import { Palette } from "@mindfusion/diagramming-controls";
 
 import { ZoomControl } from "@mindfusion/controls";
 
+import { io } from "socket.io-client";
+
 
 var shapeNodeStyle = new Style();
 var diagram = null;
+var socket = null;
+var applyingRemoteChange = false; // Flag to prevent self-broadcasting
 
 document.addEventListener("DOMContentLoaded", function () {
+	socket = io("http://localhost:3000");
 
 	// create a DiagramView component that wraps the "diagram" canvas
 	var diagramView = DiagramView.create(document.getElementById("diagram"));
 	diagramView.linkBackId = "mindfusionLink";
 	diagram = diagramView.diagram;
+	diagramView.allowInplaceEdit = true;
 
 	// styling
 	shapeNodeStyle.brush = { type: 'SolidBrush', color: '#e0e9e9' };
@@ -39,24 +43,13 @@ document.addEventListener("DOMContentLoaded", function () {
 	// set the size of diagram's scrollable area (unit is millimeter by default)
 	diagram.bounds = new Rect(0, 0, 1000, 1000);
 
-	// you can create diagram items from code;
-	// alternative syntax is diagram.addItem(new ShapeNode());
-	var node1 = diagram.factory.createShapeNode(10, 10, 30, 30);
-	node1.text = "Hello";
-
-	var node2 = diagram.factory.createShapeNode(60, 25, 30, 30);
-	node2.text = "World";
-
-	diagram.factory.createDiagramLink(node1, node2);
+	// The server will send the initial diagram upon connection
 
 	// automatically route links drawn by user
 	diagram.routeLinks = true;
 
-	// the Palette component lets users create shapes using drag-and-drop;
-	// users can also draw on the canvas using mouse or other pointing devices, as
-	// specified via DiagramView.behavior property;
+	// create UI components
 	var palette = Palette.create(document.getElementById("palette"));
-	//palette.padding = 2;
 	palette.captionFont = new Font("sans-serif", 3);
 	palette.setTop("200px");
 	palette.setWidth("200px");
@@ -64,39 +57,220 @@ document.addEventListener("DOMContentLoaded", function () {
 	palette.theme = "business";
 	initPalette(palette);
 
-	// create an Overview component that displays scaled-down version of the diagram
 	var overview = Overview.create(document.getElementById("overview"));
 	overview.diagramView = diagramView;
 	overview.backColor = "#eee";
 
-	// create a ZoomControl to allow changing zoom level using slider UI
 	var zoomer = ZoomControl.create(document.getElementById("zoomer"));
 	zoomer.target = diagramView;
 	zoomer.borderColor = "#5a79a5";
 
-	// create a Ruler component that shows measurement scales and allows aligning nodes
 	var ruler = Ruler.create(document.getElementById("ruler"));
 	ruler.diagramView = diagramView;
 	ruler.backColor = "#fff";
 	ruler.foreColor = "#5a79a5";
 	ruler.textColor = "#5a79a5";
 
-	// buttons to save and load diagrams
+	// buttons
 	document.getElementById("newButton").addEventListener("click", onNewClick);
 	document.getElementById("saveButton").addEventListener("click", onSaveClick);
 	document.getElementById("loadButton").addEventListener("click", onLoadClick);
 
-	// detect user's actions by handling diagram events, such as nodeCreated
-	diagram.nodeCreated.addEventListener(
-		(sender, args) => {
-			console.log("user has created a node");
-			args.node.brush = "lightblue";
-		});
+	// diagram event handlers
+	diagram.nodeCreated.addEventListener(onNodeCreated);
+	diagram.nodeModified.addEventListener(onNodeModified);
+	diagram.nodeTextEdited.addEventListener(onNodeTextEdited);
+	diagram.linkTextEdited.addEventListener(onLinkTextEdited);
+	diagram.nodeDeleted.addEventListener(onNodeDeleted);
+	diagram.linkDeleted.addEventListener(onLinkDeleted);
+	diagram.linkCreated.addEventListener(onLinkCreated);
+	diagram.linkModified.addEventListener(onLinkModified);
+	diagram.linkCreating.addEventListener(onLinkCreating); // validation
 
-	// validation events let us prevent users' actions; for example,
-	// onLinkCreating handler below prevents users from drawing a cycle
-	diagram.linkCreating.addEventListener(onLinkCreating);
+	// Socket.IO event handlers for receiving changes
+	socket.on('nodeCreated', (model) => {
+		applyingRemoteChange = true;
+		const node = diagram.factory.createShapeNode(model.x, model.y, model.width, model.height);
+		node.id = model.id;
+		node.text = model.text;
+		applyingRemoteChange = false;
+	});
+
+	socket.on('nodeModified', (model) => {
+		applyingRemoteChange = true;
+		const node = findNode(model.id);
+		if (node) {
+			node.bounds = new Rect(model.x, model.y, model.width, model.height);
+		}
+		applyingRemoteChange = false;
+	});
+
+	socket.on('nodeTextEdited', (model) => {
+		applyingRemoteChange = true;
+		const node = findNode(model.id);
+		if (node) {
+			node.text = model.text;
+		}
+		applyingRemoteChange = false;
+	});
+
+	socket.on('nodeDeleted', (model) => {
+		applyingRemoteChange = true;
+		const node = findNode(model.id);
+		if (node) {
+			diagram.removeItem(node);
+		}
+		applyingRemoteChange = false;
+	});
+
+	socket.on('linkCreated', (model) => {
+		applyingRemoteChange = true;
+		const origin = findNode(model.originId);
+		const destination = findNode(model.destinationId);
+		if (origin && destination) {
+			const link = diagram.factory.createDiagramLink(origin, destination);
+			link.id = model.id;
+			link.text = model.text;
+		}
+		applyingRemoteChange = false;
+	});
+
+	socket.on('linkModified', (model) => {
+		applyingRemoteChange = true;
+		const link = findLink(model.id);
+		if (link) {
+			const origin = findNode(model.originId);
+			const destination = findNode(model.destinationId);
+			if (origin && destination) {
+				link.origin = origin;
+				link.destination = destination;
+			}
+		}
+		applyingRemoteChange = false;
+	});
+
+	socket.on('linkTextEdited', (model) => {
+		applyingRemoteChange = true;
+		const link = findLink(model.id);
+		if (link) {
+			link.text = model.text;
+		}
+		applyingRemoteChange = false;
+	});
+
+	socket.on('linkDeleted', (model) => {
+		applyingRemoteChange = true;
+		const link = findLink(model.id);
+		if (link) {
+			diagram.removeItem(link);
+		}
+		applyingRemoteChange = false;
+	});
+
+	socket.on('clear', () => {
+		applyingRemoteChange = true;
+		diagram.clearAll();
+		applyingRemoteChange = false;
+	});
+
+	socket.on('load', (data) => {
+		applyingRemoteChange = true;
+		diagram.fromJson(data);
+		applyingRemoteChange = false;
+	});
 });
+
+// Diagram event handlers for emitting changes
+function onNodeCreated(sender, args) {
+	if (applyingRemoteChange) return;
+	const node = args.node;
+	// Assign a unique ID if it doesn't have one
+	if (!node.id) {
+		node.id = socket.id + new Date().valueOf();
+	}
+	const r = node.bounds;
+	const model = {
+		id: node.id,
+		text: node.text,
+		x: r.x,
+		y: r.y,
+		width: r.width,
+		height: r.height
+	};
+	socket.emit('nodeCreated', model);
+}
+
+function onNodeModified(sender, args) {
+	if (applyingRemoteChange) return;
+	const node = args.node;
+	const r = node.bounds;
+	const model = {
+		id: node.id,
+		x: r.x,
+		y: r.y,
+		width: r.width,
+		height: r.height
+	};
+	socket.emit('nodeModified', model);
+}
+
+function onNodeTextEdited(sender, args) {
+	if (applyingRemoteChange) return;
+	const model = {
+		id: args.node.id,
+		text: args.newText
+	};
+	socket.emit('nodeTextEdited', model);
+}
+
+function onLinkTextEdited(sender, args) {
+	if (applyingRemoteChange) return;
+	const model = {
+		id: args.link.id,
+		text: args.newText
+	};
+	socket.emit('linkTextEdited', model);
+}
+
+function onNodeDeleted(sender, args) {
+	if (applyingRemoteChange) return;
+	const model = { id: args.node.id };
+	socket.emit('nodeDeleted', model);
+}
+
+function onLinkDeleted(sender, args) {
+	if (applyingRemoteChange) return;
+	const model = { id: args.link.id };
+	socket.emit('linkDeleted', model);
+}
+
+function onLinkCreated(sender, args) {
+	if (applyingRemoteChange) return;
+	const link = args.link;
+	// Assign a unique ID if it doesn't have one
+	if (!link.id) {
+		link.id = socket.id + new Date().valueOf();
+	}
+	const model = {
+		id: link.id,
+		text: link.text,
+		originId: link.origin.id,
+		destinationId: link.destination.id
+	};
+	socket.emit('linkCreated', model);
+}
+
+function onLinkModified(sender, args) {
+	if (applyingRemoteChange) return;
+	const link = args.link;
+	const model = {
+		id: link.id,
+		originId: link.origin.id,
+		destinationId: link.destination.id
+	};
+	socket.emit('linkModified', model);
+}
+
 
 function onLinkCreating(diagram, args) {
 	if (args.destination == null) {
@@ -110,21 +284,11 @@ function onLinkCreating(diagram, args) {
 
 	if (path != null) {
 		// adding this new link would create a cycle
-		// [origin]--[dest]--[path internal nodes]--[origin]
-
 		args.cancel = true;
 	}
 }
 
 function initPalette(palette) {
-	// stock shape geometries are listed here:
-	// https://mindfusion.dev/docs/javascript/diagramming/CC_refTable_of_Predefined_Shapes_4.htm
-
-	// use the shape designer tool to draw custom shape geometries:
-	// https://mindfusion.dev/tools/shape-designer.html
-
-	// apart from ShapeNode, you could also add TableNode or ContainerNode objects
-
 	palette.addCategory("Flowchart Shapes");
 	var shapes = ["Start", "Input", "Process", "Decision"]
 	for (var i = 0; i < shapes.length; ++i) {
@@ -133,60 +297,24 @@ function initPalette(palette) {
 		node.style = shapeNodeStyle;
 		palette.addItem(node, "Flowchart Shapes", shapes[i]);
 	}
-
-	palette.addCategory("Data Shapes");
-	var shapes = ["Database", "Input", "Delay", "Document", "ManualOperation"];
-	for (var i = 0; i < shapes.length; ++i) {
-		var node = new ShapeNode();
-		node.shape = shapes[i];
-		node.style = shapeNodeStyle;
-		palette.addItem(node, "Data Shapes", shapes[i]);
-	}
-
-	palette.addCategory("BPMN Shapes");
-	var shapes = ["BpmnStartLink", "BpmnIntermediateLink", "BpmnEndLink",
-		"BpmnStartMessage", "BpmnIntermediateMessage", "BpmnEndMessage"];
-	for (var i = 0; i < shapes.length; ++i) {
-		var node = new ShapeNode();
-		node.shape = shapes[i];
-		node.style = shapeNodeStyle;
-		palette.addItem(node, "BPMN Shapes", shapes[i]);
-	}
-
-	// expand the first accordion item (Flowchart Shapes category)
-	palette.collapseItems(palette.items.item(2));
-	palette.expandItems(palette.items.item(0));
 }
 
 function onNewClick() {
+	if (applyingRemoteChange) return;
 	diagram.clearAll();
+	socket.emit('clear');
 }
-
-const insecureContextMessage = 'The File System API is not available in this context. Please run the page from a web server (npm start).';
 
 async function onSaveClick() {
 	try {
-		// in this example we store diagram JSON files on local file system;
-		// alternatively you could send JSON to server-side using fetch API, e.g.
-		// fetch('api_url', { method: 'POST', ... }
 		const json = diagram.toJson();
-
-		// file system API is not fully supported in some browsers yet
 		if (window.showSaveFilePicker) {
-			if (!window.isSecureContext) {
-				alert(insecureContextMessage);
-				return;
-			}
-
 			const handle = await window.showSaveFilePicker(
 				{
-					startIn: 'documents',
 					suggestedName: 'diagram.json',
 					types: [{
 						description: 'JSON Files',
-						accept: {
-							'application/json': ['.json'],
-						},
+						accept: { 'application/json': ['.json'] },
 					}],
 				});
 			const writable = await handle.createWritable();
@@ -194,7 +322,6 @@ async function onSaveClick() {
 			await writable.close();
 		}
 		else {
-			// work-around for browsers that do not support file system
 			const blob = new Blob([json], { type: 'application/json' });
 			const url = URL.createObjectURL(blob);
 			const a = document.createElement('a');
@@ -212,34 +339,22 @@ async function onSaveClick() {
 }
 
 async function onLoadClick() {
+	if (applyingRemoteChange) return;
 	try {
-		// in this example we store diagram JSON files on local file system;
-		// alternatively you could load JSON from server-side using fetch API, e.g.
-		// fetch('api_url', { method: 'GET', ... }
-
-		// file system API is not fully supported in some browsers yet
 		if (window.showOpenFilePicker) {
-			if (!window.isSecureContext) {
-				alert(insecureContextMessage);
-				return;
-			}
-
 			const [handle] = await window.showOpenFilePicker(
 				{
-					startIn: 'documents',
 					types: [{
 						description: 'JSON Files',
-						accept: {
-							'application/json': ['.json'],
-						},
+						accept: { 'application/json': ['.json'] },
 					}],
 				});
 			const file = await handle.getFile();
 			const content = await file.text();
 			diagram.fromJson(content);
+			socket.emit('load', content);
 		}
 		else {
-			// work-around for browsers that do not support file system
 			const input = document.createElement('input');
 			input.type = 'file';
 			input.accept = '.json,application/json';
@@ -247,6 +362,8 @@ async function onLoadClick() {
 				const file = e.target.files[0];
 				const content = await file.text();
 				diagram.fromJson(content);
+
+				socket.emit('load', content);
 			};
 			input.click();
 		}
@@ -255,3 +372,13 @@ async function onLoadClick() {
 		console.error(err.name, err.message);
 	}
 }
+
+// Helper functions
+function findNode(id) {
+	return diagram.nodes.find(n => n.id === id);
+}
+
+function findLink(id) {
+	return diagram.links.find(l => l.id === id);
+}
+

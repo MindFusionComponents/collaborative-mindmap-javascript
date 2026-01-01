@@ -4,18 +4,22 @@
     "email": "info@mindfusion.eu",
     "url": "https://mindfusion.dev"
   },
-  "name": "diagram-starter-npm",
+  "name": "collab-mindmap",
   "version": "1.0.0",
   "type": "module",
-  "description": "A starter project for MindFusion.Diagramming for JavaScript library with NPM and Vite.",
+  "description": "Draw diagrams collaboratively using MindFusion.Diagramming and Socket.IO",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server.js"
   },
   "dependencies": {
     "@mindfusion/diagramming": "^4.8.2",
-    "@mindfusion/diagramming-controls": "^1.5.2"
+    "@mindfusion/diagramming-controls": "^1.5.2",
+    "express": "^4.22.1",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "vite": "^5.2.0"
