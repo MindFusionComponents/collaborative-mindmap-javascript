@@ -22,7 +22,6 @@ import { io } from "socket.io-client";
 var shapeNodeStyle = new Style();
 var diagram = null;
 var socket = null;
-var applyingRemoteChange = false; // Flag to prevent self-broadcasting
 
 document.addEventListener("DOMContentLoaded", function () {
 	socket = io("http://localhost:3000");
@@ -90,44 +89,35 @@ document.addEventListener("DOMContentLoaded", function () {
 
 	// Socket.IO event handlers for receiving changes
 	socket.on('nodeCreated', (model) => {
-		applyingRemoteChange = true;
 		const node = diagram.factory.createShapeNode(model.x, model.y, model.width, model.height);
 		node.id = model.id;
 		node.text = model.text;
 		node.shape = Shape.fromId(model.shape);
-		applyingRemoteChange = false;
 	});
 
 	socket.on('nodeModified', (model) => {
-		applyingRemoteChange = true;
 		const node = findNode(model.id);
 		if (node) {
 			var newBounds = new Rect(model.x, model.y, model.width, model.height);
 			node.setBounds(newBounds, true); // the true argument also updates link end points
 		}
-		applyingRemoteChange = false;
 	});
 
 	socket.on('nodeTextEdited', (model) => {
-		applyingRemoteChange = true;
 		const node = findNode(model.id);
 		if (node) {
 			node.text = model.text;
 		}
-		applyingRemoteChange = false;
 	});
 
 	socket.on('nodeDeleted', (model) => {
-		applyingRemoteChange = true;
 		const node = findNode(model.id);
 		if (node) {
 			diagram.removeItem(node);
 		}
-		applyingRemoteChange = false;
 	});
 
 	socket.on('linkCreated', (model) => {
-		applyingRemoteChange = true;
 		const origin = findNode(model.originId);
 		const destination = findNode(model.destinationId);
 		if (origin && destination) {
@@ -135,11 +125,9 @@ document.addEventListener("DOMContentLoaded", function () {
 			link.id = model.id;
 			link.text = model.text;
 		}
-		applyingRemoteChange = false;
 	});
 
 	socket.on('linkModified', (model) => {
-		applyingRemoteChange = true;
 		const link = findLink(model.id);
 		if (link) {
 			const origin = findNode(model.originId);
@@ -149,43 +137,33 @@ document.addEventListener("DOMContentLoaded", function () {
 				link.destination = destination;
 			}
 		}
-		applyingRemoteChange = false;
 	});
 
 	socket.on('linkTextEdited', (model) => {
-		applyingRemoteChange = true;
 		const link = findLink(model.id);
 		if (link) {
 			link.text = model.text;
 		}
-		applyingRemoteChange = false;
 	});
 
 	socket.on('linkDeleted', (model) => {
-		applyingRemoteChange = true;
 		const link = findLink(model.id);
 		if (link) {
 			diagram.removeItem(link);
 		}
-		applyingRemoteChange = false;
 	});
 
 	socket.on('clear', () => {
-		applyingRemoteChange = true;
 		diagram.clearAll();
-		applyingRemoteChange = false;
 	});
 
 	socket.on('load', (data) => {
-		applyingRemoteChange = true;
 		diagram.fromJson(data);
-		applyingRemoteChange = false;
 	});
 });
 
 // Diagram event handlers for emitting changes
 function onNodeCreated(sender, args) {
-	if (applyingRemoteChange) return;
 	const node = args.node;
 	// Assign a unique ID if it doesn't have one
 	if (!node.id) {
@@ -205,7 +183,6 @@ function onNodeCreated(sender, args) {
 }
 
 function onNodeModified(sender, args) {
-	if (applyingRemoteChange) return;
 	const node = args.node;
 	const r = node.bounds;
 	const model = {
@@ -219,7 +196,6 @@ function onNodeModified(sender, args) {
 }
 
 function onNodeTextEdited(sender, args) {
-	if (applyingRemoteChange) return;
 	const model = {
 		id: args.node.id,
 		text: args.newText
@@ -228,7 +204,6 @@ function onNodeTextEdited(sender, args) {
 }
 
 function onLinkTextEdited(sender, args) {
-	if (applyingRemoteChange) return;
 	const model = {
 		id: args.link.id,
 		text: args.newText
@@ -237,19 +212,16 @@ function onLinkTextEdited(sender, args) {
 }
 
 function onNodeDeleted(sender, args) {
-	if (applyingRemoteChange) return;
 	const model = { id: args.node.id };
 	socket.emit('nodeDeleted', model);
 }
 
 function onLinkDeleted(sender, args) {
-	if (applyingRemoteChange) return;
 	const model = { id: args.link.id };
 	socket.emit('linkDeleted', model);
 }
 
 function onLinkCreated(sender, args) {
-	if (applyingRemoteChange) return;
 	const link = args.link;
 	// Assign a unique ID if it doesn't have one
 	if (!link.id) {
@@ -265,7 +237,6 @@ function onLinkCreated(sender, args) {
 }
 
 function onLinkModified(sender, args) {
-	if (applyingRemoteChange) return;
 	const link = args.link;
 	const model = {
 		id: link.id,
@@ -304,7 +275,6 @@ function initPalette(palette) {
 }
 
 function onNewClick() {
-	if (applyingRemoteChange) return;
 	diagram.clearAll();
 	socket.emit('clear');
 }
@@ -343,7 +313,6 @@ async function onSaveClick() {
 }
 
 async function onLoadClick() {
-	if (applyingRemoteChange) return;
 	try {
 		if (window.showOpenFilePicker) {
 			const [handle] = await window.showOpenFilePicker(
