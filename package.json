@@ -15,13 +15,13 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "@mindfusion/diagramming": "^4.8.2",
-    "@mindfusion/diagramming-controls": "^1.5.2",
-    "express": "^4.22.1",
-    "socket.io": "^4.8.3",
-    "socket.io-client": "^4.8.3"
+    "@mindfusion/diagramming": "^4.9.1",
+    "@mindfusion/diagramming-controls": "^1.6.1",
+    "express": "^5.3.0",
+    "socket.io": "^4.8.4",
+    "socket.io-client": "^4.8.4"
   },
   "devDependencies": {
-    "vite": "^5.2.0"
+    "vite": "^8.3.8"
   }
 }
